@@ -1,4 +1,4 @@
-package main
+package sqlsmith
 
 import (
 	"bytes"
@@ -18,9 +18,9 @@ func (s *scope) makeReturningStmt(desiredTypes []sqlType) (*scope, bool) {
 		var outScope *scope
 		var ok bool
 		if s.level < d6() && d6() < 3{
-			outScope, ok = s.makeSetOp(desiredTypes)
-		} else if d6() < 3 {
 			outScope, ok = s.makeValues(desiredTypes)
+		//} else if d6() < 3 {
+		//	outScope, ok = s.makeSetOp(desiredTypes)
 		} else {
 			outScope, ok = s.makeSelect(desiredTypes)
 		}
@@ -31,11 +31,37 @@ func (s *scope) makeReturningStmt(desiredTypes []sqlType) (*scope, bool) {
 	return nil, false
 }
 
+func (s *scope) getTableExpr() *scope {
+	outScope := s.push()
+	table := s.schema.tables[rand.Intn(len(s.schema.tables))]
+	outScope.expr = &tableExpr{
+		rel:   table,
+		alias: s.name("tab"),
+	}
+	return outScope
+}
+
+func (s *scope) makeDataSource() (*scope, bool) {
+	s = s.push()
+	if s.level < 3+d6() {
+		if d6() > 4 {
+			return s.makeJoinExpr()
+		}
+	}
+
+	if s.level < 3+d6() && coin() {
+		return s.makeInsertReturning(nil)
+	}
+
+	return s.getTableExpr(), true
+}
+
+
 type Format interface {
 	Format(*bytes.Buffer)
 }
 
-type valueExpr interface {
+type scalarExpr interface {
 	Format
 	Type() sqlType
 }
@@ -87,11 +113,11 @@ func (t tableExpr) Refs() []tableRef {
 type join struct {
 	lhs  relExpr
 	rhs  relExpr
-	on   valueExpr
+	on   scalarExpr
 	cols []column
-
-	alias string
 }
+
+// TODO(justin): also do outer joins.
 
 func (s *scope) makeJoinExpr() (*scope, bool) {
 	outScope := s.push()
@@ -129,7 +155,6 @@ func (s *scope) makeJoinExpr() (*scope, bool) {
 		rhs:   rhs,
 		cols:  cols,
 		on:    on,
-		alias: s.name("tab"),
 	}
 
 	return outScope, true
@@ -149,22 +174,18 @@ func (j *join) Cols() []column {
 
 // STATEMENTS
 
-type statement interface {
-	Format
-}
-
 /////////
 // SELECT
 /////////
 
 type selectExpr struct {
 	fromClause []relExpr
-	selectList []valueExpr
-	filter     valueExpr
+	selectList []scalarExpr
+	filter     scalarExpr
 	limit      string
 	distinct   bool
 	scope      *scope
-	orderBy    []valueExpr
+	orderBy    []scalarExpr
 }
 
 func (s *selectExpr) Format(buf *bytes.Buffer) {
@@ -235,13 +256,14 @@ func (s *scope) makeSelect(desiredTypes []sqlType) (*scope, bool) {
 		}
 	}
 
-	for coin() {
-		expr, ok := outScope.makeScalar(anyType)
-		if !ok {
-			return nil, false
-		}
-		out.orderBy = append(out.orderBy, expr)
-	}
+	// TODO: make this error less by not generating constants
+	//for coin() {
+	//	expr, ok := outScope.makeScalar(anyType)
+	//	if !ok {
+	//		return nil, false
+	//	}
+	//	out.orderBy = append(out.orderBy, expr)
+	//}
 
 	out.distinct = d100() == 1
 
@@ -254,7 +276,7 @@ func (s *scope) makeSelect(desiredTypes []sqlType) (*scope, bool) {
 	return outScope, true
 }
 
-func (s *scope) makeSelectList(desiredTypes []sqlType) ([]valueExpr, bool) {
+func (s *scope) makeSelectList(desiredTypes []sqlType) ([]scalarExpr, bool) {
 	if desiredTypes == nil {
 		for {
 			desiredTypes = append(desiredTypes, getType())
@@ -263,7 +285,7 @@ func (s *scope) makeSelectList(desiredTypes []sqlType) ([]valueExpr, bool) {
 			}
 		}
 	}
-	var result []valueExpr
+	var result []scalarExpr
 	for _, t := range desiredTypes {
 		next, ok := s.makeScalar(t)
 		if !ok {
@@ -274,36 +296,8 @@ func (s *scope) makeSelectList(desiredTypes []sqlType) ([]valueExpr, bool) {
 	return result, true
 }
 
-func (s *selectExpr) Name() string {
-	return ""
-}
-
-func (s *selectExpr) Refs() []tableRef {
-	return nil
-}
-
 func (s *selectExpr) Cols() []column {
 	return nil
-}
-
-func (s *scope) getTableExpr() *scope {
-	outScope := s.push()
-	table := s.tables[rand.Intn(len(s.tables))]
-	outScope.expr = &tableExpr{
-		rel:   table,
-		alias: s.name("tab"),
-	}
-	return outScope
-}
-
-func (s *scope) makeDataSource() (*scope, bool) {
-	if s.level < 3+d6() {
-		if d6() > 4 {
-			return s.makeJoinExpr()
-		}
-	}
-
-	return s.getTableExpr(), true
 }
 
 /////////
@@ -313,7 +307,7 @@ func (s *scope) makeDataSource() (*scope, bool) {
 type insert struct {
 	target  string
 	targets []column
-	input   statement
+	input   relExpr
 }
 
 func (i *insert) Format(buf *bytes.Buffer) {
@@ -336,8 +330,13 @@ func (s *scope) makeInsert() (*scope, bool) {
 
 	desiredTypes := make([]sqlType, 0)
 	targets := make([]column, 0)
+
+	// Grab some subset of the columns of the table to attempt to insert into.
+	// TODO(justin): also support the non-named variant.
 	for _, c := range target.Cols() {
-		if c.writability == writable && (!c.typ.nullable || coin()) {
+		// We *must* write a column if it's writable and non-nullable.
+		// We *can* write a column if it's writable and nullable.
+		if c.writability == writable && (!c.nullable || coin()) {
 			targets = append(targets, c)
 			desiredTypes = append(desiredTypes, c.typ)
 		}
@@ -348,6 +347,13 @@ func (s *scope) makeInsert() (*scope, bool) {
 		return nil, false
 	}
 
+	// HACK: the ref here needs to have the original table name, not whatever
+	// alias we gave it.
+	outScope.refs = append(outScope.refs, &tableExpr{
+		alias: target.rel.name,
+		rel: target.rel,
+	})
+
 	outScope.expr = &insert{
 		target:  target.rel.name,
 		targets: targets,
@@ -357,16 +363,67 @@ func (s *scope) makeInsert() (*scope, bool) {
 	return outScope, true
 }
 
-func (i *insert) Name() string {
-	return ""
-}
-
-func (i *insert) Refs() []tableRef {
-	return nil
-}
-
 func (i *insert) Cols() []column {
 	return nil
+}
+
+///////////////////////
+// INSERT ... RETURNING
+///////////////////////
+
+// INSERT...RETURNING is only treated as a data source for now. That means
+// it's always the [...] variant.
+
+type insertReturning struct {
+	insert
+
+	returning []scalarExpr
+}
+
+func (s *scope) makeInsertReturning(desiredTypes []sqlType) (*scope, bool) {
+	if desiredTypes == nil {
+		for {
+			desiredTypes = append(desiredTypes, getType())
+			if d6() < 2 {
+				break
+			}
+		}
+	}
+
+	insertScope, ok := s.makeInsert()
+	if !ok {
+		return nil, false
+	}
+
+	outScope := s.push()
+
+	var returning []scalarExpr
+	for _, t := range desiredTypes {
+		e, ok := insertScope.makeScalar(t)
+		if !ok {
+			return nil, false
+		}
+		returning = append(returning, e)
+	}
+
+	outScope.expr = &insertReturning{
+		insert: *insertScope.expr.(*insert),
+		returning: returning,
+	}
+	return outScope, true
+}
+
+func (i *insertReturning) Format(buf *bytes.Buffer) {
+	buf.WriteByte('[')
+	i.insert.Format(buf)
+	buf.WriteString(" returning ")
+	comma := ""
+	for _, r := range i.returning {
+		buf.WriteString(comma)
+		r.Format(buf)
+		comma = ", "
+	}
+	buf.WriteByte(']')
 }
 
 /////////
@@ -374,7 +431,7 @@ func (i *insert) Cols() []column {
 /////////
 
 type values struct {
-	values [][]valueExpr
+	values [][]scalarExpr
 }
 
 func (s *scope) makeValues(desiredTypes []sqlType) (*scope, bool) {
@@ -388,30 +445,22 @@ func (s *scope) makeValues(desiredTypes []sqlType) (*scope, bool) {
 		}
 	}
 
-	count := rand.Intn(5) + 1
-	vals := make([][]valueExpr, 0, count)
-	for i := 0; i < count; i++ {
-		tuple := make([]valueExpr, 0, len(desiredTypes))
-		for _, t := range desiredTypes {
+	numRowsToInsert := d6()
+	vals := make([][]scalarExpr, numRowsToInsert)
+	for i := 0; i < numRowsToInsert; i++ {
+		tuple := make([]scalarExpr, len(desiredTypes))
+		for j, t := range desiredTypes {
 			e, ok := outScope.makeScalar(t)
 			if !ok {
 				return nil, false
 			}
-			tuple = append(tuple, e)
+			tuple[j] = e
 		}
-		vals = append(vals, tuple)
+		vals[i] = tuple
 	}
 
 	outScope.expr = &values{vals}
 	return outScope, true
-}
-
-func (v *values) Name() string {
-	return ""
-}
-
-func (v *values) Refs() []tableRef {
-	return nil
 }
 
 func (v *values) Cols() []column {
@@ -435,9 +484,9 @@ func (v *values) Format(buf *bytes.Buffer) {
 	}
 }
 
-/////////
-// SET OP
-/////////
+//////////////////////////////////
+// SET OP (UNION/INTERSECT/EXCEPT)
+//////////////////////////////////
 
 type setOp struct {
 	op string

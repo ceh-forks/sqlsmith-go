@@ -1,29 +1,45 @@
-package main
+package sqlsmith
 
 import (
 	"database/sql"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
 type operator struct {
 	name string
-	left baseType
-	right baseType
-	out baseType
+	left sqlType
+	right sqlType
+	out sqlType
 }
 
+type function struct {
+	name string
+	inputs []sqlType
+	out sqlType
+}
+
+// schema represents the state of the database as sqlsmith-go understands it, including
+// not only the tables present but also things like what operator overloads exist.
 type schema struct {
 	tables []namedRelation
-	operators map[baseType][]operator
+	operators map[sqlType][]operator
+	functions map[sqlType][]function
 }
 
 func (s *schema) makeScope() *scope {
-	count := 0
 	return &scope{
-		count: &count,
-		tables: s.tables,
+		namer: &namer{make(map[string]int)},
 		schema: s,
 	}
+}
+
+func (s *schema) GetOperatorsByOutputType(outTyp sqlType) []operator {
+	return s.operators[outTyp]
+}
+
+func (s *schema) GetFunctionsByOutputType(outTyp sqlType) []function {
+	return s.functions[outTyp]
 }
 
 func makeSchema() *schema {
@@ -33,12 +49,10 @@ func makeSchema() *schema {
 	}
 	defer db.Close()
 
-	tables := extractTables(db)
-	operators := extractOperators(db)
-
 	return &schema{
-		tables: tables,
-		operators: operators,
+		tables: extractTables(db),
+		operators: extractOperators(db),
+		functions: extractFunctions(db),
 	}
 }
 
@@ -59,20 +73,24 @@ func extractTables(db *sql.DB) []namedRelation {
 	ORDER BY
 		table_catalog, table_schema, table_name
 	`)
-	// TODO: have a flag that doesn't use system tables.
+	// TODO(justin): have a flag that includes system tables?
 	if err != nil {
 		panic(err)
 	}
 	defer rows.Close()
+
+
+	// This is a little gross: we want to operate on each segment of the results
+	// that corresponds to a single table. We could maybe json_agg the results
+	// or something for a cleaner processing step?
+
 	firstTime := true
 	var lastCatalog, lastSchema, lastName string
 	var tables []namedRelation
 	var currentCols []column
 	emit := func() {
 		tables = append(tables, namedRelation{
-			relation: relation{
-				cols: currentCols,
-			},
+			cols: currentCols,
 			name: lastName,
 		})
 	}
@@ -102,7 +120,8 @@ func extractTables(db *sql.DB) []namedRelation {
 			currentCols,
 			column{
 				col,
-				typeFromName(typ, nullable),
+				typeFromName(typ),
+				nullable,
 				writability,
 			},
 		)
@@ -110,11 +129,13 @@ func extractTables(db *sql.DB) []namedRelation {
 		lastSchema = schema
 		lastName = name
 	}
-	emit()
+	if !firstTime {
+		emit()
+	}
 	return tables
 }
 
-func extractOperators(db *sql.DB) map[baseType][]operator {
+func extractOperators(db *sql.DB) map[sqlType][]operator {
 	rows, err := db.Query(`
 SELECT
 	oprname, oprleft, oprright, oprresult
@@ -128,7 +149,7 @@ WHERE
 	}
 	defer rows.Close()
 
-	result := make(map[baseType][]operator, 0)
+	result := make(map[sqlType][]operator, 0)
 	for rows.Next() {
 		var name string
 		var left, right, out int
@@ -154,6 +175,59 @@ WHERE
 				out: outTyp,
 			},
 		)
+	}
+	return result
+}
+
+func extractFunctions(db *sql.DB) map[sqlType][]function {
+	rows, err := db.Query(`
+SELECT
+	proname, proargtypes::INT[], prorettype
+FROM
+	pg_catalog.pg_proc
+WHERE
+	NOT proisagg
+	AND NOT proiswindow
+	AND NOT proretset
+	AND proname NOT IN ('crdb_internal.force_panic', 'crdb_internal.force_log_fatal')
+`)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	result := make(map[sqlType][]function, 0)
+	for rows.Next() {
+		var name string
+		var inputs []int64
+		var returnType int64
+		rows.Scan(&name, pq.Array(&inputs), &returnType)
+
+		types := make([]sqlType, len(inputs))
+		unsupported := false
+		for i, oid := range inputs {
+			t, ok := oidToType(int(oid))
+			if !ok {
+				unsupported = true
+				break
+			}
+			types[i] = t
+		}
+
+		if unsupported {
+			continue
+		}
+
+		out, ok := oidToType(int(returnType))
+		if !ok {
+			continue
+		}
+
+		result[out] = append(result[out], function{
+			name,
+			types,
+			out,
+		})
 	}
 	return result
 }

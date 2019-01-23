@@ -1,4 +1,4 @@
-package main
+package sqlsmith
 
 import "math/rand"
 
