@@ -44,11 +44,11 @@ const retryCount = 20
 func Run() {
 	rand.Seed(int64(time.Now().Nanosecond()))
 
-	schema := makeSchema()
-	s := schema.makeScope()
-
 	db, _ := sql.Open("postgres", "port=26257 user=root dbname=defaultdb sslmode=disable")
 	defer db.Close()
+
+	schema := makeSchema(db)
+
 	for {
 		sc, ok := s.makeStmt()
 		if !ok {

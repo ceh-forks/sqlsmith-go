@@ -3,7 +3,6 @@ package sqlsmith
 import (
 	"database/sql"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 )
 
 type operator struct {
@@ -22,6 +21,7 @@ type function struct {
 // schema represents the state of the database as sqlsmith-go understands it, including
 // not only the tables present but also things like what operator overloads exist.
 type schema struct {
+	db        *sql.DB
 	tables    []namedRelation
 	operators map[sqlType][]operator
 	functions map[sqlType][]function
@@ -42,22 +42,18 @@ func (s *schema) GetFunctionsByOutputType(outTyp sqlType) []function {
 	return s.functions[outTyp]
 }
 
-func makeSchema() *schema {
-	db, err := sql.Open("postgres", "port=26257 user=root dbname=defaultdb sslmode=disable")
-	if err != nil {
-		panic(err)
+func makeSchema(db *sql.DB) *schema {
+	s := &schema{
+		db: db,
 	}
-	defer db.Close()
-
-	return &schema{
-		tables:    extractTables(db),
-		operators: extractOperators(db),
-		functions: extractFunctions(db),
-	}
+	s.tables = s.extractTables()
+	s.operators = s.extractOperators()
+	s.functions = s.extractFunctions()
+	return s
 }
 
-func extractTables(db *sql.DB) []namedRelation {
-	rows, err := db.Query(`
+func (s *schema) extractTables() []namedRelation {
+	rows, err := s.db.Query(`
 	SELECT
 		table_catalog,
 		table_schema,
@@ -134,8 +130,8 @@ func extractTables(db *sql.DB) []namedRelation {
 	return tables
 }
 
-func extractOperators(db *sql.DB) map[sqlType][]operator {
-	rows, err := db.Query(`
+func (s *schema) extractOperators() map[types.T][]operator {
+	rows, err := s.db.Query(`
 SELECT
 	oprname, oprleft, oprright, oprresult
 FROM
@@ -178,8 +174,8 @@ WHERE
 	return result
 }
 
-func extractFunctions(db *sql.DB) map[sqlType][]function {
-	rows, err := db.Query(`
+func (s *schema) extractFunctions() map[types.T][]function {
+	rows, err := s.db.Query(`
 SELECT
 	proname, proargtypes::INT[], prorettype
 FROM
