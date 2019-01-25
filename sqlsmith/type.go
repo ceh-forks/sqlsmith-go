@@ -59,4 +59,3 @@ var types = []sqlType{intType, boolType, stringType}
 func getType() sqlType {
 	return types[rand.Intn(len(types))]
 }
-

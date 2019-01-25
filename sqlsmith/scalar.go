@@ -285,7 +285,7 @@ func (s *scope) makeBinOp(typ sqlType) (scalarExpr, bool) {
 type funcExpr struct {
 	outTyp sqlType
 
-	name string
+	name   string
 	inputs []scalarExpr
 }
 
@@ -323,7 +323,7 @@ func (s *scope) makeFunc(typ sqlType) (scalarExpr, bool) {
 
 	return &funcExpr{
 		outTyp: typ,
-		name: op.name,
+		name:   op.name,
 		inputs: args,
 	}, true
 }

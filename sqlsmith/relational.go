@@ -17,10 +17,10 @@ func (s *scope) makeReturningStmt(desiredTypes []sqlType) (*scope, bool) {
 	for i := 0; i < retryCount; i++ {
 		var outScope *scope
 		var ok bool
-		if s.level < d6() && d6() < 3{
+		if s.level < d6() && d6() < 3 {
 			outScope, ok = s.makeValues(desiredTypes)
-		//} else if d6() < 3 {
-		//	outScope, ok = s.makeSetOp(desiredTypes)
+			//} else if d6() < 3 {
+			//	outScope, ok = s.makeSetOp(desiredTypes)
 		} else {
 			outScope, ok = s.makeSelect(desiredTypes)
 		}
@@ -55,7 +55,6 @@ func (s *scope) makeDataSource() (*scope, bool) {
 
 	return s.getTableExpr(), true
 }
-
 
 type Format interface {
 	Format(*bytes.Buffer)
@@ -151,10 +150,10 @@ func (s *scope) makeJoinExpr() (*scope, bool) {
 	}
 
 	outScope.expr = &join{
-		lhs:   lhs,
-		rhs:   rhs,
-		cols:  cols,
-		on:    on,
+		lhs:  lhs,
+		rhs:  rhs,
+		cols: cols,
+		on:   on,
 	}
 
 	return outScope, true
@@ -351,7 +350,7 @@ func (s *scope) makeInsert() (*scope, bool) {
 	// alias we gave it.
 	outScope.refs = append(outScope.refs, &tableExpr{
 		alias: target.rel.name,
-		rel: target.rel,
+		rel:   target.rel,
 	})
 
 	outScope.expr = &insert{
@@ -407,7 +406,7 @@ func (s *scope) makeInsertReturning(desiredTypes []sqlType) (*scope, bool) {
 	}
 
 	outScope.expr = &insertReturning{
-		insert: *insertScope.expr.(*insert),
+		insert:    *insertScope.expr.(*insert),
 		returning: returning,
 	}
 	return outScope, true
@@ -489,8 +488,8 @@ func (v *values) Format(buf *bytes.Buffer) {
 //////////////////////////////////
 
 type setOp struct {
-	op string
-	left relExpr
+	op    string
+	left  relExpr
 	right relExpr
 }
 
@@ -518,8 +517,8 @@ func (s *scope) makeSetOp(desiredTypes []sqlType) (*scope, bool) {
 	}
 
 	outScope.expr = &setOp{
-		op: setOps[rand.Intn(len(setOps))],
-		left: leftScope.expr,
+		op:    setOps[rand.Intn(len(setOps))],
+		left:  leftScope.expr,
 		right: rightScope.expr,
 	}
 

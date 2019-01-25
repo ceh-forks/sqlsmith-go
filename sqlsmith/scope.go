@@ -49,17 +49,17 @@ type scope struct {
 	// level is how deep we are in the scope tree - it is used as a heuristic
 	// to eventually bottom out recursion (so we don't attempt to construct an
 	// infinitely large join, or something).
-	level  int
+	level int
 
 	// refs is a slice of "tables" which can be referenced in an expression.
 	// They are guaranteed to all have unique aliases.
-	refs   []tableRef
+	refs []tableRef
 
 	// namer is used to generate unique table and column names.
 	namer *namer
 
 	// expr is the expression associated with this scope.
-	expr   relExpr
+	expr relExpr
 }
 
 func (s *scope) push() *scope {

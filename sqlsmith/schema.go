@@ -7,29 +7,29 @@ import (
 )
 
 type operator struct {
-	name string
-	left sqlType
+	name  string
+	left  sqlType
 	right sqlType
-	out sqlType
+	out   sqlType
 }
 
 type function struct {
-	name string
+	name   string
 	inputs []sqlType
-	out sqlType
+	out    sqlType
 }
 
 // schema represents the state of the database as sqlsmith-go understands it, including
 // not only the tables present but also things like what operator overloads exist.
 type schema struct {
-	tables []namedRelation
+	tables    []namedRelation
 	operators map[sqlType][]operator
 	functions map[sqlType][]function
 }
 
 func (s *schema) makeScope() *scope {
 	return &scope{
-		namer: &namer{make(map[string]int)},
+		namer:  &namer{make(map[string]int)},
 		schema: s,
 	}
 }
@@ -50,7 +50,7 @@ func makeSchema() *schema {
 	defer db.Close()
 
 	return &schema{
-		tables: extractTables(db),
+		tables:    extractTables(db),
 		operators: extractOperators(db),
 		functions: extractFunctions(db),
 	}
@@ -78,7 +78,6 @@ func extractTables(db *sql.DB) []namedRelation {
 		panic(err)
 	}
 	defer rows.Close()
-
 
 	// This is a little gross: we want to operate on each segment of the results
 	// that corresponds to a single table. We could maybe json_agg the results
@@ -169,10 +168,10 @@ WHERE
 		result[outTyp] = append(
 			result[outTyp],
 			operator{
-				name: name,
-				left: leftTyp,
+				name:  name,
+				left:  leftTyp,
 				right: rightTyp,
-				out: outTyp,
+				out:   outTyp,
 			},
 		)
 	}
