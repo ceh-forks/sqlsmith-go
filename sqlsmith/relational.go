@@ -33,14 +33,17 @@ func (s *scope) makeReturningStmt(desiredTypes []types.T) (*scope, bool) {
 	return nil, false
 }
 
-func (s *scope) getTableExpr() *scope {
+func (s *scope) getTableExpr() (*scope, bool) {
+	if len(s.schema.tables) == 0 {
+		return nil, false
+	}
 	outScope := s.push()
 	table := s.schema.tables[rand.Intn(len(s.schema.tables))]
 	outScope.expr = &tableExpr{
 		rel:   table,
 		alias: s.name("tab"),
 	}
-	return outScope
+	return outScope, true
 }
 
 func (s *scope) makeDataSource() (*scope, bool) {
@@ -55,7 +58,7 @@ func (s *scope) makeDataSource() (*scope, bool) {
 		return s.makeInsertReturning(nil)
 	}
 
-	return s.getTableExpr(), true
+	return s.getTableExpr()
 }
 
 type Format interface {
@@ -327,7 +330,11 @@ func (i *insert) Format(buf *bytes.Buffer) {
 
 func (s *scope) makeInsert() (*scope, bool) {
 	outScope := s.push()
-	target := s.getTableExpr().expr.(*tableExpr)
+	out, ok := s.getTableExpr()
+	if !ok {
+		return nil, false
+	}
+	target := out.expr.(*tableExpr)
 
 	var desiredTypes []types.T
 	var targets []column
