@@ -2,9 +2,9 @@ package sqlsmith
 
 import (
 	"fmt"
-)
 
-type baseType int
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
+)
 
 type writability int
 
@@ -15,7 +15,7 @@ const (
 
 type column struct {
 	name        string
-	typ         sqlType
+	typ         types.T
 	nullable    bool
 	writability writability
 }

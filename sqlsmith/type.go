@@ -3,59 +3,28 @@ package sqlsmith
 import (
 	"fmt"
 	"math/rand"
+	"strings"
+
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 )
 
-type sqlType int
-
-const (
-	anyType sqlType = iota
-	intType
-	boolType
-	stringType
-)
-
-func oidToType(oid int) (sqlType, bool) {
-	switch oid {
-	case 20:
-		return intType, true
-	case 16:
-		return boolType, true
-	case 25:
-		return stringType, true
+var typeNames = func() map[string]types.T {
+	m := map[string]types.T{}
+	for _, T := range types.OidToType {
+		m[T.SQLName()] = T
 	}
-	return 0, false
+	return m
+}()
+
+func typeFromName(name string) types.T {
+	typ, ok := typeNames[strings.ToLower(name)]
+	if !ok {
+		panic(fmt.Errorf("unknown type name: %s", name))
+	}
+	return typ
 }
 
-func typeName(typ sqlType) string {
-	switch typ {
-	case anyType:
-		return "<any>"
-	case intType:
-		return "int"
-	case boolType:
-		return "bool"
-	case stringType:
-		return "string"
-	default:
-		panic("unhandled type")
-	}
-}
-
-func typeFromName(name string) sqlType {
-	switch name {
-	case "INT":
-		return intType
-	case "STRING":
-		return stringType
-	case "BOOL":
-		return boolType
-	default:
-		panic(fmt.Sprintf("unhandled type %q", name))
-	}
-}
-
-var types = []sqlType{intType, boolType, stringType}
-
-func getType() sqlType {
-	return types[rand.Intn(len(types))]
+func getRandType() types.T {
+	arr := types.AnyNonArray
+	return arr[rand.Intn(len(arr))]
 }

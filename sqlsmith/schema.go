@@ -2,20 +2,23 @@ package sqlsmith
 
 import (
 	"database/sql"
+
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 	"github.com/lib/pq"
+	"github.com/lib/pq/oid"
 )
 
 type operator struct {
 	name  string
-	left  sqlType
-	right sqlType
-	out   sqlType
+	left  types.T
+	right types.T
+	out   types.T
 }
 
 type function struct {
 	name   string
-	inputs []sqlType
-	out    sqlType
+	inputs []types.T
+	out    types.T
 }
 
 // schema represents the state of the database as sqlsmith-go understands it, including
@@ -23,8 +26,8 @@ type function struct {
 type schema struct {
 	db        *sql.DB
 	tables    []namedRelation
-	operators map[sqlType][]operator
-	functions map[sqlType][]function
+	operators map[types.T][]operator
+	functions map[types.T][]function
 }
 
 func (s *schema) makeScope() *scope {
@@ -34,11 +37,11 @@ func (s *schema) makeScope() *scope {
 	}
 }
 
-func (s *schema) GetOperatorsByOutputType(outTyp sqlType) []operator {
+func (s *schema) GetOperatorsByOutputType(outTyp types.T) []operator {
 	return s.operators[outTyp]
 }
 
-func (s *schema) GetFunctionsByOutputType(outTyp sqlType) []function {
+func (s *schema) GetFunctionsByOutputType(outTyp types.T) []function {
 	return s.functions[outTyp]
 }
 
@@ -114,10 +117,10 @@ func (s *schema) extractTables() []namedRelation {
 		currentCols = append(
 			currentCols,
 			column{
-				col,
-				typeFromName(typ),
-				nullable,
-				writability,
+				name:        col,
+				typ:         typeFromName(typ),
+				nullable:    nullable,
+				writability: writability,
 			},
 		)
 		lastCatalog = catalog
@@ -144,20 +147,20 @@ WHERE
 	}
 	defer rows.Close()
 
-	result := make(map[sqlType][]operator, 0)
+	result := make(map[types.T][]operator, 0)
 	for rows.Next() {
 		var name string
-		var left, right, out int
+		var left, right, out oid.Oid
 		rows.Scan(&name, &left, &right, &out)
-		leftTyp, ok := oidToType(left)
+		leftTyp, ok := types.OidToType[left]
 		if !ok {
 			continue
 		}
-		rightTyp, ok := oidToType(right)
+		rightTyp, ok := types.OidToType[right]
 		if !ok {
 			continue
 		}
-		outTyp, ok := oidToType(out)
+		outTyp, ok := types.OidToType[out]
 		if !ok {
 			continue
 		}
@@ -191,36 +194,36 @@ WHERE
 	}
 	defer rows.Close()
 
-	result := make(map[sqlType][]function, 0)
+	result := make(map[types.T][]function, 0)
 	for rows.Next() {
 		var name string
-		var inputs []int64
-		var returnType int64
+		var inputs []oid.Oid
+		var returnType oid.Oid
 		rows.Scan(&name, pq.Array(&inputs), &returnType)
 
-		types := make([]sqlType, len(inputs))
+		typs := make([]types.T, len(inputs))
 		unsupported := false
 		for i, oid := range inputs {
-			t, ok := oidToType(int(oid))
+			t, ok := types.OidToType[oid]
 			if !ok {
 				unsupported = true
 				break
 			}
-			types[i] = t
+			typs[i] = t
 		}
 
 		if unsupported {
 			continue
 		}
 
-		out, ok := oidToType(int(returnType))
+		out, ok := types.OidToType[returnType]
 		if !ok {
 			continue
 		}
 
 		result[out] = append(result[out], function{
 			name,
-			types,
+			typs,
 			out,
 		})
 	}

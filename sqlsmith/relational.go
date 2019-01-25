@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 )
 
 func (s *scope) makeStmt() (*scope, bool) {
@@ -13,7 +15,7 @@ func (s *scope) makeStmt() (*scope, bool) {
 	return s.makeReturningStmt(nil)
 }
 
-func (s *scope) makeReturningStmt(desiredTypes []sqlType) (*scope, bool) {
+func (s *scope) makeReturningStmt(desiredTypes []types.T) (*scope, bool) {
 	for i := 0; i < retryCount; i++ {
 		var outScope *scope
 		var ok bool
@@ -62,7 +64,7 @@ type Format interface {
 
 type scalarExpr interface {
 	Format
-	Type() sqlType
+	Type() types.T
 }
 
 // REL OPS
@@ -227,7 +229,7 @@ func (s *selectExpr) Format(buf *bytes.Buffer) {
 	}
 }
 
-func (s *scope) makeSelect(desiredTypes []sqlType) (*scope, bool) {
+func (s *scope) makeSelect(desiredTypes []types.T) (*scope, bool) {
 	outScope := s.push()
 
 	var out selectExpr
@@ -275,10 +277,10 @@ func (s *scope) makeSelect(desiredTypes []sqlType) (*scope, bool) {
 	return outScope, true
 }
 
-func (s *scope) makeSelectList(desiredTypes []sqlType) ([]scalarExpr, bool) {
+func (s *scope) makeSelectList(desiredTypes []types.T) ([]scalarExpr, bool) {
 	if desiredTypes == nil {
 		for {
-			desiredTypes = append(desiredTypes, getType())
+			desiredTypes = append(desiredTypes, getRandType())
 			if d6() == 1 {
 				break
 			}
@@ -327,8 +329,8 @@ func (s *scope) makeInsert() (*scope, bool) {
 	outScope := s.push()
 	target := s.getTableExpr().expr.(*tableExpr)
 
-	desiredTypes := make([]sqlType, 0)
-	targets := make([]column, 0)
+	var desiredTypes []types.T
+	var targets []column
 
 	// Grab some subset of the columns of the table to attempt to insert into.
 	// TODO(justin): also support the non-named variant.
@@ -337,6 +339,9 @@ func (s *scope) makeInsert() (*scope, bool) {
 		// We *can* write a column if it's writable and nullable.
 		if c.writability == writable && (!c.nullable || coin()) {
 			targets = append(targets, c)
+			if c.typ == nil {
+				panic("nil")
+			}
 			desiredTypes = append(desiredTypes, c.typ)
 		}
 	}
@@ -379,10 +384,10 @@ type insertReturning struct {
 	returning []scalarExpr
 }
 
-func (s *scope) makeInsertReturning(desiredTypes []sqlType) (*scope, bool) {
+func (s *scope) makeInsertReturning(desiredTypes []types.T) (*scope, bool) {
 	if desiredTypes == nil {
 		for {
-			desiredTypes = append(desiredTypes, getType())
+			desiredTypes = append(desiredTypes, getRandType())
 			if d6() < 2 {
 				break
 			}
@@ -433,11 +438,11 @@ type values struct {
 	values [][]scalarExpr
 }
 
-func (s *scope) makeValues(desiredTypes []sqlType) (*scope, bool) {
+func (s *scope) makeValues(desiredTypes []types.T) (*scope, bool) {
 	outScope := s.push()
 	if desiredTypes == nil {
 		for {
-			desiredTypes = append(desiredTypes, getType())
+			desiredTypes = append(desiredTypes, getRandType())
 			if d6() < 2 {
 				break
 			}
@@ -495,11 +500,11 @@ type setOp struct {
 
 var setOps = []string{"union", "union all", "except", "except all", "intersect", "intersect all"}
 
-func (s *scope) makeSetOp(desiredTypes []sqlType) (*scope, bool) {
+func (s *scope) makeSetOp(desiredTypes []types.T) (*scope, bool) {
 	outScope := s.push()
 	if desiredTypes == nil {
 		for {
-			desiredTypes = append(desiredTypes, getType())
+			desiredTypes = append(desiredTypes, getRandType())
 			if d6() < 2 {
 				break
 			}

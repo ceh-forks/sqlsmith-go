@@ -2,16 +2,18 @@ package sqlsmith
 
 import (
 	"bytes"
-	"fmt"
 	"math/rand"
+
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
+	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
 )
 
 // makeScalar attempts constructs a scalar expression of the requested type.
 // If it was unsuccessful, it will return false.
-func (s *scope) makeScalar(typ sqlType) (scalarExpr, bool) {
+func (s *scope) makeScalar(typ types.T) (scalarExpr, bool) {
 	pickedType := typ
-	if typ == anyType {
-		pickedType = getType()
+	if typ == types.Any {
+		pickedType = getRandType()
 	}
 	s = s.push()
 
@@ -54,9 +56,9 @@ func (s *scope) makeBoolExpr() (scalarExpr, bool) {
 		var ok bool
 
 		if d6() < 4 {
-			result, ok = s.makeBinOp(boolType)
+			result, ok = s.makeBinOp(types.Bool)
 		} else if d6() < 4 {
-			result, ok = s.makeScalar(boolType)
+			result, ok = s.makeScalar(types.Bool)
 		} else {
 			result, ok = s.makeExists()
 		}
@@ -80,7 +82,7 @@ type caseExpr struct {
 	falseExpr scalarExpr
 }
 
-func (c *caseExpr) Type() sqlType {
+func (c *caseExpr) Type() types.T {
 	return c.trueExpr.Type()
 }
 
@@ -94,8 +96,8 @@ func (c *caseExpr) Format(buf *bytes.Buffer) {
 	buf.WriteString(" end")
 }
 
-func (s *scope) makeCaseExpr(typ sqlType) (scalarExpr, bool) {
-	condition, ok := s.makeScalar(boolType)
+func (s *scope) makeCaseExpr(typ types.T) (scalarExpr, bool) {
+	condition, ok := s.makeScalar(types.Bool)
 	if !ok {
 		return nil, false
 	}
@@ -122,7 +124,7 @@ type coalesceExpr struct {
 	secondExpr scalarExpr
 }
 
-func (c *coalesceExpr) Type() sqlType {
+func (c *coalesceExpr) Type() types.T {
 	return c.firstExpr.Type()
 }
 
@@ -132,11 +134,11 @@ func (c *coalesceExpr) Format(buf *bytes.Buffer) {
 	buf.WriteString(", ")
 	c.secondExpr.Format(buf)
 	buf.WriteString(") as ")
-	buf.WriteString(typeName(c.firstExpr.Type()))
+	buf.WriteString(c.firstExpr.Type().SQLName())
 	buf.WriteString(")")
 }
 
-func (s *scope) makeCoalesceExpr(typ sqlType) (scalarExpr, bool) {
+func (s *scope) makeCoalesceExpr(typ types.T) (scalarExpr, bool) {
 	firstExpr, ok := s.makeScalar(typ)
 	if !ok {
 		return nil, false
@@ -155,11 +157,11 @@ func (s *scope) makeCoalesceExpr(typ sqlType) (scalarExpr, bool) {
 ////////
 
 type constExpr struct {
-	typ  sqlType
+	typ  types.T
 	expr string
 }
 
-func (c *constExpr) Type() sqlType {
+func (c *constExpr) Type() types.T {
 	return c.typ
 }
 
@@ -167,35 +169,18 @@ func (c *constExpr) Format(buf *bytes.Buffer) {
 	buf.WriteString(c.expr)
 }
 
-func (s *scope) makeConstExpr(typ sqlType) scalarExpr {
-	var val string
-	if d6() == 1 {
-		val = fmt.Sprintf("null::%s", typeName(typ))
-	} else {
-		switch typ {
-		case intType:
-			// Small right now because of #32682.
-			val = fmt.Sprintf("%d", d6())
-		case boolType:
-			if coin() {
-				val = "true"
-			} else {
-				val = "false"
-			}
-		case stringType:
-			if coin() {
-				val = "'hello'"
-			} else {
-				val = "'goodbye'"
-			}
-		default:
-			panic("unknown type")
-		}
+func (s *scope) makeConstExpr(typ types.T) scalarExpr {
+	col, err := sqlbase.DatumTypeToColumnType(typ)
+	if err != nil {
+		panic(err)
 	}
+
+	datum := sqlbase.RandDatumWithNullChance(rnd, col, 6)
+
 	// TODO(justin): maintain context and see if we're in an INSERT, and maybe use
 	// DEFAULT (which is a legal "value" in such a context).
 
-	return &constExpr{typ, val}
+	return &constExpr{typ, datum.String()}
 }
 
 /////////
@@ -204,10 +189,10 @@ func (s *scope) makeConstExpr(typ sqlType) scalarExpr {
 
 type colRefExpr struct {
 	ref string
-	typ sqlType
+	typ types.T
 }
 
-func (c *colRefExpr) Type() sqlType {
+func (c *colRefExpr) Type() types.T {
 	return c.typ
 }
 
@@ -215,10 +200,10 @@ func (c *colRefExpr) Format(buf *bytes.Buffer) {
 	buf.WriteString(c.ref)
 }
 
-func (s *scope) makeColRef(typ sqlType) (scalarExpr, bool) {
+func (s *scope) makeColRef(typ types.T) (scalarExpr, bool) {
 	ref := s.refs[rand.Intn(len(s.refs))]
 	col := ref.Cols()[rand.Intn(len(ref.Cols()))]
-	if typ != anyType && col.typ != typ {
+	if typ != types.Any && col.typ != typ {
 		return nil, false
 	}
 
@@ -233,14 +218,14 @@ func (s *scope) makeColRef(typ sqlType) (scalarExpr, bool) {
 /////////
 
 type opExpr struct {
-	outTyp sqlType
+	outTyp types.T
 
 	left  scalarExpr
 	right scalarExpr
 	op    string
 }
 
-func (o *opExpr) Type() sqlType {
+func (o *opExpr) Type() types.T {
 	return o.outTyp
 }
 
@@ -254,11 +239,14 @@ func (o *opExpr) Format(buf *bytes.Buffer) {
 	buf.WriteByte(')')
 }
 
-func (s *scope) makeBinOp(typ sqlType) (scalarExpr, bool) {
-	if typ == anyType {
-		typ = getType()
+func (s *scope) makeBinOp(typ types.T) (scalarExpr, bool) {
+	if typ == types.Any {
+		typ = getRandType()
 	}
 	ops := s.schema.GetOperatorsByOutputType(typ)
+	if len(ops) == 0 {
+		return nil, false
+	}
 	op := ops[rand.Intn(len(ops))]
 
 	left, ok := s.makeScalar(op.left)
@@ -283,13 +271,13 @@ func (s *scope) makeBinOp(typ sqlType) (scalarExpr, bool) {
 //////////
 
 type funcExpr struct {
-	outTyp sqlType
+	outTyp types.T
 
 	name   string
 	inputs []scalarExpr
 }
 
-func (f *funcExpr) Type() sqlType {
+func (f *funcExpr) Type() types.T {
 	return f.outTyp
 }
 
@@ -305,11 +293,14 @@ func (f *funcExpr) Format(buf *bytes.Buffer) {
 	buf.WriteByte(')')
 }
 
-func (s *scope) makeFunc(typ sqlType) (scalarExpr, bool) {
-	if typ == anyType {
-		typ = getType()
+func (s *scope) makeFunc(typ types.T) (scalarExpr, bool) {
+	if typ == types.Any {
+		typ = getRandType()
 	}
 	ops := s.schema.GetFunctionsByOutputType(typ)
+	if len(ops) == 0 {
+		return nil, false
+	}
 	op := ops[rand.Intn(len(ops))]
 
 	args := make([]scalarExpr, 0)
@@ -342,8 +333,8 @@ func (e *exists) Format(buf *bytes.Buffer) {
 	buf.WriteString(")")
 }
 
-func (e *exists) Type() sqlType {
-	return boolType
+func (e *exists) Type() types.T {
+	return types.Bool
 }
 
 func (s *scope) makeExists() (scalarExpr, bool) {
@@ -369,12 +360,12 @@ func (s *scalarSubq) Format(buf *bytes.Buffer) {
 	buf.WriteString(")")
 }
 
-func (s *scalarSubq) Type() sqlType {
+func (s *scalarSubq) Type() types.T {
 	return s.subquery.(*selectExpr).selectList[0].Type()
 }
 
-func (s *scope) makeScalarSubquery(typ sqlType) (scalarExpr, bool) {
-	outScope, ok := s.makeSelect([]sqlType{typ})
+func (s *scope) makeScalarSubquery(typ types.T) (scalarExpr, bool) {
+	outScope, ok := s.makeSelect([]types.T{typ})
 	if !ok {
 		return nil, false
 	}
