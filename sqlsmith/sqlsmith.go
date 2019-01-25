@@ -50,6 +50,7 @@ func Run() {
 	schema := makeSchema(db)
 
 	for {
+		s := schema.makeScope()
 		sc, ok := s.makeStmt()
 		if !ok {
 			continue
@@ -58,6 +59,7 @@ func Run() {
 		var buf bytes.Buffer
 		expr.Format(&buf)
 		fmt.Println(buf.String())
+		fmt.Println()
 		rows, err := db.Query(buf.String())
 		if err != nil {
 			if strings.Contains(err.Error(), "connection refused") {
@@ -72,8 +74,5 @@ func Run() {
 		if err == nil {
 			_ = rows.Close()
 		}
-
-		// Reset (mostly to reset the naming).
-		s = schema.makeScope()
 	}
 }
