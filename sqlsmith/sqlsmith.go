@@ -48,7 +48,17 @@ func Run() {
 
 	schema := makeSchema(db)
 
-	for {
+	for i := 0; ; i++ {
+		if i%100 == 0 {
+			create := sqlbase.RandCreateTable(schema.rnd, schema.rnd.Int())
+			stmt := create.String()
+			fmt.Println(stmt)
+			if _, err := db.Exec(stmt); err != nil {
+				fmt.Println("error:", err)
+			}
+			schema.ReloadSchemas()
+		}
+
 		s := schema.makeScope()
 		sc, ok := s.makeStmt()
 		if !ok {

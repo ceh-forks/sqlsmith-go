@@ -52,10 +52,14 @@ func makeSchema(db *sql.DB) *schema {
 		db:  db,
 		rnd: rand.New(rand.NewSource(0)),
 	}
+	s.ReloadSchemas()
+	return s
+}
+
+func (s *schema) ReloadSchemas() {
 	s.tables = s.extractTables()
 	s.operators = s.extractOperators()
 	s.functions = s.extractFunctions()
-	return s
 }
 
 func (s *schema) extractTables() []namedRelation {
