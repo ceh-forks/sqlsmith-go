@@ -28,8 +28,8 @@ type schema struct {
 	db        *sql.DB
 	rnd       *rand.Rand
 	tables    []namedRelation
-	operators map[types.T][]operator
-	functions map[types.T][]function
+	operators map[oid.Oid][]operator
+	functions map[oid.Oid][]function
 }
 
 func (s *schema) makeScope() *scope {
@@ -40,11 +40,11 @@ func (s *schema) makeScope() *scope {
 }
 
 func (s *schema) GetOperatorsByOutputType(outTyp types.T) []operator {
-	return s.operators[outTyp]
+	return s.operators[outTyp.Oid()]
 }
 
 func (s *schema) GetFunctionsByOutputType(outTyp types.T) []function {
-	return s.functions[outTyp]
+	return s.functions[outTyp.Oid()]
 }
 
 func makeSchema(db *sql.DB) *schema {
@@ -136,7 +136,7 @@ func (s *schema) extractTables() []namedRelation {
 	return tables
 }
 
-func (s *schema) extractOperators() map[types.T][]operator {
+func (s *schema) extractOperators() map[oid.Oid][]operator {
 	rows, err := s.db.Query(`
 SELECT
 	oprname, oprleft, oprright, oprresult
@@ -150,7 +150,7 @@ WHERE
 	}
 	defer rows.Close()
 
-	result := make(map[types.T][]operator, 0)
+	result := make(map[oid.Oid][]operator, 0)
 	for rows.Next() {
 		var name string
 		var left, right, out oid.Oid
@@ -167,8 +167,8 @@ WHERE
 		if !ok {
 			continue
 		}
-		result[outTyp] = append(
-			result[outTyp],
+		result[out] = append(
+			result[out],
 			operator{
 				name:  name,
 				left:  leftTyp,
@@ -180,7 +180,7 @@ WHERE
 	return result
 }
 
-func (s *schema) extractFunctions() map[types.T][]function {
+func (s *schema) extractFunctions() map[oid.Oid][]function {
 	rows, err := s.db.Query(`
 SELECT
 	proname, proargtypes::INT[], prorettype
@@ -197,7 +197,7 @@ WHERE
 	}
 	defer rows.Close()
 
-	result := make(map[types.T][]function, 0)
+	result := make(map[oid.Oid][]function, 0)
 	for rows.Next() {
 		var name string
 		var inputs []oid.Oid
@@ -224,7 +224,7 @@ WHERE
 			continue
 		}
 
-		result[out] = append(result[out], function{
+		result[returnType] = append(result[returnType], function{
 			name,
 			typs,
 			out,
