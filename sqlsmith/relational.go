@@ -346,9 +346,6 @@ func (s *scope) makeInsert() (*scope, bool) {
 		// We *can* write a column if it's writable and nullable.
 		if c.writability == writable && (!c.nullable || coin()) {
 			targets = append(targets, c)
-			if c.typ == nil {
-				panic("nil")
-			}
 			desiredTypes = append(desiredTypes, c.typ)
 		}
 	}
