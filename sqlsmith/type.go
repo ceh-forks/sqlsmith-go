@@ -11,7 +11,7 @@ import (
 var typeNames = func() map[string]types.T {
 	m := map[string]types.T{
 		"int8":   types.Int,
-		"int8[]": types.TArray{types.Int},
+		"int8[]": types.TArray{Typ: types.Int},
 		"float8": types.Float,
 	}
 	for _, T := range types.OidToType {
@@ -24,7 +24,7 @@ var typeNames = func() map[string]types.T {
 func typeFromName(name string) types.T {
 	// Fill in any collated string type names we see.
 	if sp := strings.Split(name, "STRING COLLATE "); len(sp) == 2 {
-		typeNames[strings.ToLower(name)] = types.TCollatedString{sp[1]}
+		typeNames[strings.ToLower(name)] = types.TCollatedString{Locale: sp[1]}
 	}
 	typ, ok := typeNames[strings.ToLower(name)]
 	if !ok {
