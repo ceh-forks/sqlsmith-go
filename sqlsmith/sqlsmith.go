@@ -8,6 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cockroachdb/cockroach/pkg/sql/parser"
+	// Import builtins for pretty printing.
+	_ "github.com/cockroachdb/cockroach/pkg/sql/sem/builtins"
+	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
 )
 
@@ -54,7 +58,7 @@ func Run() {
 	for i := 0; ; i++ {
 		if i%100 == 0 {
 			create := sqlbase.RandCreateTable(schema.rnd, schema.rnd.Int())
-			stmt := create.String()
+			stmt := pretty(create.String())
 			fmt.Println(stmt)
 			if _, err := db.Exec(stmt); err != nil {
 				fmt.Println("error:", err)
@@ -70,9 +74,10 @@ func Run() {
 		expr := sc.expr
 		var buf bytes.Buffer
 		expr.Format(&buf)
-		fmt.Println(buf.String())
+		stmt := pretty(buf.String())
+		fmt.Println(stmt)
 		fmt.Println()
-		rows, err := db.Query(buf.String())
+		rows, err := db.Query(stmt)
 		if err != nil {
 			if strings.Contains(err.Error(), "connection refused") {
 				// TODO(justin): we should dump the schema we used along with the panicking query in this case.
@@ -87,4 +92,12 @@ func Run() {
 			_ = rows.Close()
 		}
 	}
+}
+
+func pretty(sql string) string {
+	stmt, err := parser.ParseOne(sql)
+	if err != nil {
+		return sql
+	}
+	return tree.Pretty(stmt.AST)
 }
