@@ -175,7 +175,7 @@ func (s *scope) makeConstExpr(typ types.T) scalarExpr {
 		panic(err)
 	}
 
-	datum := sqlbase.RandDatumWithNullChance(rnd, col, 6)
+	datum := sqlbase.RandDatumWithNullChance(s.schema.rnd, col, 6)
 
 	// TODO(justin): maintain context and see if we're in an INSERT, and maybe use
 	// DEFAULT (which is a legal "value" in such a context).

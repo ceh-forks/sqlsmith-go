@@ -2,6 +2,7 @@ package sqlsmith
 
 import (
 	"database/sql"
+	"math/rand"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 	"github.com/lib/pq"
@@ -25,6 +26,7 @@ type function struct {
 // not only the tables present but also things like what operator overloads exist.
 type schema struct {
 	db        *sql.DB
+	rnd       *rand.Rand
 	tables    []namedRelation
 	operators map[types.T][]operator
 	functions map[types.T][]function
@@ -47,7 +49,8 @@ func (s *schema) GetFunctionsByOutputType(outTyp types.T) []function {
 
 func makeSchema(db *sql.DB) *schema {
 	s := &schema{
-		db: db,
+		db:  db,
+		rnd: rand.New(rand.NewSource(0)),
 	}
 	s.tables = s.extractTables()
 	s.operators = s.extractOperators()
