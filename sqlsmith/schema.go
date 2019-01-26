@@ -3,6 +3,7 @@ package sqlsmith
 import (
 	"database/sql"
 	"math/rand"
+	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/types"
 	"github.com/lib/pq"
@@ -50,7 +51,7 @@ func (s *schema) GetFunctionsByOutputType(outTyp types.T) []function {
 func makeSchema(db *sql.DB) *schema {
 	s := &schema{
 		db:  db,
-		rnd: rand.New(rand.NewSource(0)),
+		rnd: rand.New(rand.NewSource(int64(time.Now().Nanosecond()))),
 	}
 	s.ReloadSchemas()
 	return s

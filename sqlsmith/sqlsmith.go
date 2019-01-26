@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"time"
+
+	"github.com/cockroachdb/cockroach/pkg/sql/sqlbase"
 )
 
 // sqlsmith-go
@@ -41,7 +44,7 @@ import (
 const retryCount = 20
 
 func Run() {
-	rand.Seed(0)
+	rand.Seed(int64(time.Now().Nanosecond()))
 
 	db, _ := sql.Open("postgres", "port=26257 user=root dbname=defaultdb sslmode=disable")
 	defer db.Close()
