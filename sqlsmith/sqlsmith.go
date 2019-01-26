@@ -80,7 +80,7 @@ func Run() {
 				break
 			}
 			fmt.Println()
-			fmt.Println("error: ", err)
+			fmt.Println("error:", err)
 			fmt.Println()
 		}
 		if err == nil {
